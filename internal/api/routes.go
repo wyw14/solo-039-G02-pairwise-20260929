@@ -20,6 +20,9 @@ func (s *Server) routes() {
 	s.router.Get("/api/evidence", s.evidence)
 	s.router.Get("/api/recovery", s.recovery)
 	s.router.Get("/api/profile", s.profile)
+	s.router.Post("/api/profile/readings", s.ingestTrays)
+	s.router.Post("/api/profile/baseline", s.learnTrays)
+	s.router.Get("/api/profile/diagnosis", s.trayDiagnosis)
 	s.router.Get("/api/metrics", s.metrics)
 }
 

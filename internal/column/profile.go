@@ -6,24 +6,55 @@ import (
 	"sort"
 )
 
+const (
+	MinTray = 1
+	MaxTray = 200
+)
+
 type TrayReading struct {
-	Tray        int
-	Temperature float64
-	Pressure    float64
+	Tray        int     `json:"tray"`
+	Temperature float64 `json:"temperature"`
+	Pressure    float64 `json:"pressure"`
 }
 
 type Profile struct{ readings map[int]TrayReading }
 
 func NewProfile() *Profile { return &Profile{readings: make(map[int]TrayReading)} }
 
-func (p *Profile) Put(reading TrayReading) error {
-	if reading.Tray < 1 || reading.Tray > 200 {
+func validateReading(reading TrayReading) error {
+	if reading.Tray < MinTray || reading.Tray > MaxTray {
 		return errors.New("tray outside configured column")
 	}
-	if math.IsNaN(reading.Temperature) || math.IsNaN(reading.Pressure) {
+	if math.IsNaN(reading.Temperature) || math.IsNaN(reading.Pressure) ||
+		math.IsInf(reading.Temperature, 0) || math.IsInf(reading.Pressure, 0) {
 		return errors.New("tray reading is not numeric")
 	}
+	return nil
+}
+
+func (p *Profile) Put(reading TrayReading) error {
+	if err := validateReading(reading); err != nil {
+		return err
+	}
 	p.readings[reading.Tray] = reading
+	return nil
+}
+
+// SetAll replaces the whole profile with the given readings. Nothing is
+// replaced unless every reading is valid and no tray is reported twice, so a
+// batch containing a bad value never leaves a partially applied profile.
+func (p *Profile) SetAll(readings []TrayReading) error {
+	next := make(map[int]TrayReading, len(readings))
+	for _, reading := range readings {
+		if err := validateReading(reading); err != nil {
+			return err
+		}
+		if _, exists := next[reading.Tray]; exists {
+			return errors.New("duplicate tray in batch")
+		}
+		next[reading.Tray] = reading
+	}
+	p.readings = next
 	return nil
 }
 
@@ -38,6 +69,39 @@ func (p *Profile) Ordered() []TrayReading {
 		out = append(out, p.readings[tray])
 	}
 	return out
+}
+
+// Get returns the reading for a tray and whether it is present.
+func (p *Profile) Get(tray int) (TrayReading, bool) {
+	reading, ok := p.readings[tray]
+	return reading, ok
+}
+
+// Gaps returns the tray numbers missing inside the covered span (between the
+// lowest and highest instrumented tray). Trays beyond that span are not gaps.
+func (p *Profile) Gaps() []int {
+	values := p.Ordered()
+	if len(values) < 2 {
+		return nil
+	}
+	gaps := make([]int, 0)
+	for index := 1; index < len(values); index++ {
+		for tray := values[index-1].Tray + 1; tray < values[index].Tray; tray++ {
+			gaps = append(gaps, tray)
+		}
+	}
+	return gaps
+}
+
+// PressureDrop returns the pressure loss between two instrumented trays,
+// measured in the upflow direction (lower tray minus upper tray).
+func (p *Profile) PressureDrop(lower, upper int) (float64, bool) {
+	lo, okLow := p.readings[lower]
+	up, okUp := p.readings[upper]
+	if !okLow || !okUp {
+		return 0, false
+	}
+	return lo.Pressure - up.Pressure, true
 }
 
 func (p *Profile) Gradient() (float64, error) {

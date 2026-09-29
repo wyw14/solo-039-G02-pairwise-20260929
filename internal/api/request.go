@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"github.com/wyw14/solo-039/internal/column"
 	"net/http"
 	"strconv"
 )
@@ -21,6 +22,12 @@ type routeRequest struct {
 type leaseRequest struct {
 	Owner  string  `json:"owner"`
 	Amount float64 `json:"amount"`
+}
+
+type traySweepRequest struct {
+	At       int64                `json:"at"`
+	Readings []column.TrayReading `json:"readings"`
+	Expected []int                `json:"expected"`
 }
 
 func decodeJSON(r *http.Request, value any) error {
